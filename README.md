@@ -106,7 +106,7 @@ The system manages:
 | Backend           | Node.js / FastAPI                  |
 | Database          | SQLite (Local), Firebase / Supabase (Cloud Sync) |
 | Desktop App       | Electron.js                        |
-| Mobile App        | React Native / Flutter             |
+| Mobile App        | React Native             |
 
 ---
 

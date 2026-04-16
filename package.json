@@ -13,10 +13,14 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "autoprefixer": "^10.5.0",
     "body-parser": "^2.2.2",
     "cors": "^2.8.6",
     "express": "^5.2.1",
-    "sqlite3": "^6.0.1"
+    "lucide-react": "^1.8.0",
+    "postcss": "^8.5.9",
+    "sqlite3": "^6.0.1",
+    "tailwindcss": "^4.2.2"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

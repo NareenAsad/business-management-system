@@ -118,6 +118,43 @@ app.get('/sales/list', (req, res) => {
 
 //   INVENTORY APIs
 
+app.post('/inventory/add-stock', (req, res) => {
+  const { id, qty } = req.body;
+
+  db.run(
+    `UPDATE inventory SET quantity = quantity + ? WHERE id = ?`,
+    [qty, id],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+
+      res.json({ message: "Stock added" });
+    }
+  );
+});
+
+app.post('/inventory/reduce-stock', (req, res) => {
+  const { id, qty } = req.body;
+
+  // Prevent negative stock
+  db.get(`SELECT quantity FROM inventory WHERE id = ?`, [id], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    if (row.quantity < qty) {
+      return res.status(400).json({ message: "Not enough stock" });
+    }
+
+    db.run(
+      `UPDATE inventory SET quantity = quantity - ? WHERE id = ?`,
+      [qty, id],
+      function (err2) {
+        if (err2) return res.status(500).json({ error: err2.message });
+
+        res.json({ message: "Stock reduced" });
+      }
+    );
+  });
+});
+
 // Add Product
 app.post('/inventory/add', (req, res) => {
     const { product_name, quantity, purchase_price, sale_price } = req.body;
@@ -200,6 +237,21 @@ app.get('/daybook/summary', (req, res) => {
     });
 });
 
+app.post('/daybook/manual', (req, res) => {
+  const { date, amount, category } = req.body;
+
+  db.run(
+    `INSERT INTO daybook (date, type, category, amount, reference_id)
+     VALUES (?, 'income', ?, ?, NULL)`,
+    [date, category, amount],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+
+      res.json({ message: "Manual income added", id: this.lastID });
+    }
+  );
+});
+
 //   CHEQUES API
 
 // Add Cheque
@@ -235,6 +287,17 @@ app.get('/cheques', (req, res) => {
 
 //   GET CHEQUES BY STATUS
 
+app.get('/cheques/pending', (req, res) => {
+  db.all(
+    `SELECT * FROM cheques WHERE status = 'pending' ORDER BY date ASC`,
+    [],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json(rows);
+    }
+  );
+});
+
 app.get('/cheques/:status', (req, res) => {
     const { status } = req.params;
 
@@ -254,6 +317,30 @@ app.get('/cheques/:status', (req, res) => {
 });
 
 //   UPDATE CHEQUE STATUS
+
+// Mark Cleared
+app.put('/cheques/clear/:id', (req, res) => {
+  db.run(
+    `UPDATE cheques SET status = 'cleared' WHERE id = ?`,
+    [req.params.id],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: "Cheque cleared" });
+    }
+  );
+});
+
+// Mark Dishonored
+app.put('/cheques/dishonor/:id', (req, res) => {
+  db.run(
+    `UPDATE cheques SET status = 'dishonored' WHERE id = ?`,
+    [req.params.id],
+    function (err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ message: "Cheque dishonored" });
+    }
+  );
+});
 
 app.put('/cheques/update/:id', (req, res) => {
     const { id } = req.params;
@@ -275,6 +362,59 @@ app.put('/cheques/update/:id', (req, res) => {
         }
     );
 });
+
+//   REPORTS API
+app.get('/reports', async (req, res) => {
+    try {
+        // Fetch Sales for last 7 days and group by date
+        const salesRows = await new Promise((resolve, reject) => {
+            db.all(`SELECT date, type, SUM(amount) as total FROM sales GROUP BY date, type ORDER BY date DESC LIMIT 50`, (err, rows) => {
+                if (err) reject(err); else resolve(rows);
+            });
+        });
+
+        const salesMap = {};
+        for(let r of salesRows) {
+            if(!salesMap[r.date]) salesMap[r.date] = { period: r.date, cash:0, online:0, credit:0, cheque:0 };
+            const type = r.type ? r.type.toLowerCase() : 'cash';
+            if(salesMap[r.date][type] !== undefined) {
+                salesMap[r.date][type] += r.total;
+            }
+        }
+        const sales = Object.values(salesMap);
+
+        // Fetch Inventory
+        const invRows = await new Promise((resolve, reject) => {
+            db.all(`SELECT * FROM inventory`, (err, rows) => {
+                if(err) reject(err); else resolve(rows);
+            });
+        });
+        const inventory = invRows.map(r => ({
+           item: r.product_name,
+           opening: r.quantity, 
+           purchased: 0,
+           sold: 0,
+           closing: r.quantity,
+           value: r.quantity * r.purchase_price
+        }));
+
+        // Fetch Cheques
+        const chequeRows = await new Promise((resolve, reject) => {
+            db.all(`SELECT party_name as party, amount, date, status FROM cheques ORDER BY date DESC`, (err, rows) => {
+                if(err) reject(err); else resolve(rows);
+            });
+        });
+
+        res.json({
+            sales: sales,
+            inventory: inventory,
+            cheques: chequeRows
+        });
+    } catch(err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 
 //   SERVER
 
